@@ -1,0 +1,287 @@
+import pytest
+import time
+import random
+import warnings
+from seleniumbase import BaseCase
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver import Chrome
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+
+# Corrige o erro de reescrita do Pytest
+pytest.register_assert_rewrite("seleniumbase")
+
+# Ignora warnings desnecessários do pytest
+warnings.filterwarnings("ignore", category=pytest.PytestAssertRewriteWarning)
+
+class WebAutomation(BaseCase):
+    def setUp(self):
+        # Definir o diretório de logs para algo que você tenha permissão para acessar
+        self.LOG_FOLDER = None
+        
+        # Configurar as opções antes de chamar o setUp do BaseCase
+        options = Options() 
+        
+        # Caminho para o arquivo CRX
+        crx_path = "crx1.crx"
+        options.add_extension(crx_path)  # Adiciona a extensão CRX ao navegador
+        
+        # Configurações adicionais
+        options.add_argument("--disable-gpu")  # Desativa a aceleração de GPU      
+        options.add_argument("start-maximized")  # Maximiza a janela ao abrir
+        options.add_argument("disable-infobars")  # Desativa a barra de informações do Chrome
+        options.add_argument("profile-directory=Default")  # Usa o perfil padrão do Chrome
+        options.add_argument("disable-dev-shm-usage")  # Desativa o uso de /dev/shm para melhorar desempenho
+        
+        # Definir o User-Agent exatamente como no cabeçalho fornecido
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+        options.add_argument(f"user-agent={user_agent}")
+        
+        # Passar as opções para o BaseCase
+        self.options = options
+        
+        # Chamar o setUp do BaseCase com as opções configuradas
+        super().setUp()
+        
+        # IMPORTANTE: Configurar os cabeçalhos personalizados APÓS a inicialização do driver
+        # Os cabeçalhos devem corresponder EXATAMENTE aos fornecidos
+        
+        # Usar o Chrome DevTools Protocol para definir cabeçalhos personalizados
+        # Estes cabeçalhos são baseados no exemplo fornecido
+        headers = {
+            'Connection': 'keep-alive',
+            'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"Windows"',
+            'Upgrade-Insecure-Requests': '1',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-User': '?1',
+            'Sec-Fetch-Dest': 'document',
+            'Accept-Encoding': 'gzip, deflate, br, zstd',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+        }
+        
+        # Habilitar o Network primeiro
+        self.driver.execute_cdp_cmd('Network.enable', {})
+        
+        # Configurar os headers personalizados
+        self.driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {'headers': headers})
+        
+        # Configurar o User-Agent via CDP para garantir consistência
+        self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+            'userAgent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+            'acceptLanguage': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'platform': 'Windows'
+        })
+
+    def test_website_authority_check(self):
+        # Primeiro, navegar para o domínio para poder definir os cookies corretamente
+        self.open("https://ahrefs.com")
+        time.sleep(3)
+        
+        # Reconfigurar o cookie do Cloudflare usando JavaScript (o único método confiável)
+        # Importante: Isso evita o erro de InvalidCookieDomainException
+        self.driver.execute_script("""
+        document.cookie = "cookieyes-consent=consentid:Qk1US05zZXBFWFN2NVhpRlRwN2VjSzdKU204d1QxWnk,consent:yes,action:yes,necessary:yes,functional:yes,analytics:yes,performance:yes,advertisement:yes,other:yes,lastRenewedDate:1734629266000";
+        document.cookie = "_gcl_au=1.1.1217753254.1740715728";
+        document.cookie = "_fbp=fb.1.1740715728367.5495525354729519";
+        document.cookie = "cf_clearance=.d9IHGJBFoNmNRt73OcqlfEkOymqNO3QfXeISsGvYqQ-1740762397-1.2.1.1-gIPJznEHPT0UdjGOBQclD8ps6jJ__UjMh_xszeTpFeVoyvdXwfs8Nd2cRHChhYHUH_4Tfuz6ZxYPDwRuNbzvPx8JjxGiZ_nzJCg0XTIzU183ITo4nQgjUB8keVCgIkUwYsY8V7Lv6LyBaYboG.tj_5NVA.7.XTLsEl.ROUAPrWu1soH4Zrq5OhPURLa0Y8ktl0S6BH3fioRxz8sYSiq8_67UeO8e6kXLqe0uVK6nWVm3JqEoN_plR8kfUI6TOLDHFiGcJ3Cd9QkuVHu82eGoMveT95qJTUkrmfwv.eldLgC3T1c5VK0AaPyffD3xgvntgmfqH29RjbZLzwizNewtfUuISCUIJSOjVdKYl8CqR00teXzH6Blj4UyE4eEJBfebtkP8w8lOJcnoic9qYToNneKkZ6gwghnFJjnF3M8nK2Y";
+        """)
+        
+        # Verificar se os cabeçalhos estão sendo enviados usando um site de teste
+        self.open("https://httpbin.org/headers")
+        time.sleep(3)
+        
+        # Capturar os cabeçalhos enviados para verificação
+        headers_response = self.driver.find_element(By.TAG_NAME, "pre").text
+        print("Headers enviados:")
+        print(headers_response)
+        
+        # Verificar cookies atuais
+        cookies = self.driver.get_cookies()
+        print("Cookies atuais:")
+        for cookie in cookies:
+            print(f"Nome: {cookie['name']}, Domínio: {cookie.get('domain', 'N/A')}")
+        
+        # Abre o site alvo com o caminho exato da URL que você está usando
+        self.open("https://ahrefs.com/pt/website-authority-checker")
+        time.sleep(5)  # Espera inicial para carregamento
+        
+        # Reconfigurar os cookies novamente após navegar para a página específica
+        self.driver.execute_script("""
+        document.cookie = "cf_clearance=.d9IHGJBFoNmNRt73OcqlfEkOymqNO3QfXeISsGvYqQ-1740762397-1.2.1.1-gIPJznEHPT0UdjGOBQclD8ps6jJ__UjMh_xszeTpFeVoyvdXwfs8Nd2cRHChhYHUH_4Tfuz6ZxYPDwRuNbzvPx8JjxGiZ_nzJCg0XTIzU183ITo4nQgjUB8keVCgIkUwYsY8V7Lv6LyBaYboG.tj_5NVA.7.XTLsEl.ROUAPrWu1soH4Zrq5OhPURLa0Y8ktl0S6BH3fioRxz8sYSiq8_67UeO8e6kXLqe0uVK6nWVm3JqEoN_plR8kfUI6TOLDHFiGcJ3Cd9QkuVHu82eGoMveT95qJTUkrmfwv.eldLgC3T1c5VK0AaPyffD3xgvntgmfqH29RjbZLzwizNewtfUuISCUIJSOjVdKYl8CqR00teXzH6Blj4UyE4eEJBfebtkP8w8lOJcnoic9qYToNneKkZ6gwghnFJjnF3M8nK2Y";
+        """)
+
+        try:
+            # **Aceitar cookies, se necessário**
+            accept_button = WebDriverWait(self.driver, 5).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.cky-btn-accept"))
+            )   
+            accept_button.click()
+            print("Cookies aceitos.")
+            time.sleep(2)  # Pequena espera para garantir que o pop-up sumiu
+
+        except Exception as e:
+            print(f"Botão de cookies não encontrado ou já aceito: {e}")
+
+        # Lista de sites para consultar
+        sites = ["https://exemplo.com", "https://outrosite.com"]
+
+        for site in sites:
+            try:
+                # # Reconfigurar os cabeçalhos antes de cada requisição para garantir sua presença
+                # headers = {
+                #     'Connection': 'keep-alive',
+                #     'sec-ch-ua': '"Not(A:Brand";v="99", "Google Chrome";v="133", "Chromium";v="133"',
+                #     'sec-ch-ua-mobile': '?0',
+                #     'sec-ch-ua-platform': '"Windows"',                      
+                #     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+                #     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                #     'Sec-Fetch-Site': 'none',
+                #     'Sec-Fetch-Mode': 'navigate',
+                #     'Sec-Fetch-User': '?1',
+                #     'Sec-Fetch-Dest': 'document',
+                #     'Accept-Encoding': 'gzip, deflate, br, zstd',
+                #     'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                # }
+                # self.driver.execute_cdp_cmd('Network.enable', {})
+                # self.driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {'headers': headers})
+                
+                # **Simular comportamento humano**
+                self.execute_script(f"window.scrollTo(0, {random.randint(100, 300)})")
+                time.sleep(random.uniform(1.5, 3.5))  # Tempo aleatório de espera
+
+                # **Esperar até que o campo de entrada esteja visível**
+                input_selectors = [
+                    "input.css-hfjebg.css-1mk4k1q.css-wcs6",
+                    "input[placeholder='example.com']",
+                    "//input[contains(@class, 'css-')]",
+                    "//input[contains(@placeholder, 'example')]"
+                ]
+                
+                input_box = None
+                for selector in input_selectors:
+                    try:
+                        if selector.startswith("//"):
+                            input_box = WebDriverWait(self.driver, 3).until(
+                                EC.presence_of_element_located((By.XPATH, selector))
+                            )
+                        else:
+                            input_box = WebDriverWait(self.driver, 3).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                        if input_box:
+                            print(f"Encontrou campo de entrada usando seletor: {selector}")
+                            break
+                    except Exception:
+                        continue
+                
+                if not input_box:
+                    # Último recurso: tentar encontrar qualquer input na página
+                    print("Tentando encontrar qualquer input na página...")
+                    input_box = WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.TAG_NAME, "input"))
+                    )
+                
+                # Tirar screenshot para debug
+                self.save_screenshot("campo_entrada.png")
+                
+                # Limpar e preencher de forma mais "humana" - com pequenas pausas entre caracteres
+                input_box.clear()
+                for char in site:
+                    input_box.send_keys(char)
+                    time.sleep(random.uniform(0.05, 0.15))  # Pequena pausa entre caracteres
+                
+                time.sleep(random.uniform(1, 2))  # Pausa após completar a digitação
+
+                # **Clicar no botão de pesquisa**
+                submit_selectors = [
+                    "button.css-ygijhp.css-1tyndxa.css-1ip10c0.css-9cz4sg.css-115l1wb",
+                    "button[type='submit']",
+                    "//button[contains(@class, 'css-')]",
+                    "//button[contains(text(), 'Check')]",
+                    "//button[contains(text(), 'Search')]"
+                ]
+                
+                submit_button = None
+                for selector in submit_selectors:
+                    try:
+                        if selector.startswith("//"):
+                            submit_button = WebDriverWait(self.driver, 3).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                        else:
+                            submit_button = WebDriverWait(self.driver, 3).until(
+                                EC.element_to_be_clickable((By.CSS_SELECTOR, selector))
+                            )
+                        if submit_button:
+                            print(f"Encontrou botão usando seletor: {selector}")
+                            break
+                    except Exception:
+                        continue
+                
+                if not submit_button:
+                    # Último recurso: tentar encontrar qualquer botão na página
+                    print("Tentando encontrar qualquer botão na página...")
+                    submit_button = WebDriverWait(self.driver, 5).until(
+                        EC.element_to_be_clickable((By.TAG_NAME, "button"))
+                    )
+                
+                # Tirar screenshot para debug
+                self.save_screenshot("botao_submit.png")
+                
+                submit_button.click()
+                time.sleep(random.uniform(4, 7))  # Tempo variável para exibição do resultado
+
+                # Tirar screenshot para verificar resultado
+                self.save_screenshot(f"resultado_{site.replace('https://', '').replace('.', '_')}.png")
+
+                # **Capturar o resultado (Domain Rating)**
+                try:
+                    result_selectors = [
+                        ".dr-score",
+                        "//div[contains(@class, 'dr-score')]",
+                        "//div[contains(text(), 'DR')]",
+                        "//span[contains(text(), 'DR')]"
+                    ]
+                    
+                    result = None
+                    for selector in result_selectors:
+                        try:
+                            if selector.startswith("//"):
+                                result = WebDriverWait(self.driver, 3).until(
+                                    EC.presence_of_element_located((By.XPATH, selector))
+                                ).text
+                            else:
+                                result = WebDriverWait(self.driver, 3).until(
+                                    EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                                ).text
+                            if result:
+                                print(f"Encontrou resultado usando seletor: {selector}")
+                                break
+                        except Exception:
+                            continue
+                    
+                    if result:
+                        print(f"{site} → DR: {result}")
+                    else:
+                        print(f"Não foi possível encontrar o resultado para {site}")
+                        
+                except Exception as e:
+                    print(f"Erro ao tentar obter resultado para {site}: {e}")
+
+            except Exception as e:
+                print(f"Erro ao processar {site}: {e}")
+                # Capturar o erro com um screenshot
+                self.save_screenshot(f"erro_geral_{site.replace('https://', '').replace('.', '_')}.png")
+
+# Executar o teste corretamente
+if __name__ == "__main__":
+    pytest.main(["-v", __file__])   
